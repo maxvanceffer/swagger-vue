@@ -1,8 +1,8 @@
-/* eslint-disable */ 
-import axios from 'axios' 
-import qs from 'qs' 
-let domain = '{{&domain}}' 
-let axiosInstance = axios.create() 
+/* eslint-disable */
+import axios from 'axios'
+import qs from 'qs'
+let domain = '{{&domain}}'
+let axiosInstance = axios.create()
 export const getDomain = () => {
   return domain
 }
@@ -32,3 +32,8 @@ export const request = (method, url, body, queryParameters, form, config)=>{
   }
 }
 {{> methods }}
+
+
+{{> baseModel }}
+
+{{> models }}

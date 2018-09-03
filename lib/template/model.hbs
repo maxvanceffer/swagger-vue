@@ -1,0 +1,19 @@
+
+/**
+* Model for definition #definitions/{{&name}}
+* Type: {{capitalize definition.type}}
+*/
+
+{{log '---------'}}
+{{log definition}}
+{{log '---------'}}
+
+export class {{&name}} extends Base {
+    defaults () {
+        return {
+            {{each definition.properties}}
+            {{> }}
+            {{/each}}
+        }
+    }
+}
