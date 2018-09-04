@@ -4,15 +4,29 @@
 * Type: {{capitalize definition.type}}
 */
 
-{{log '---------'}}
-{{log definition}}
-{{log '---------'}}
-
 export class {{&name}} extends Base {
+    refs () {
+      return {
+        {{#each definition.properties}}
+          {{#propertyHasRef}}
+            {{@key}}: {{propertyRef}}{{#unless @last}},{{/unless}}
+          {{/propertyHasRef}}
+        {{/each}}
+      }
+    }
+
+    types () {
+      return {
+        {{#each definition.properties}}
+            {{@key}}: "{{propertyType}}"{{#unless @last}},{{/unless}}
+        {{/each}}
+      }
+    }
+
     defaults () {
         return {
-            {{each definition.properties}}
-            {{> }}
+            {{#each definition.properties}}
+              {{@key}}: {{defaultPropertyValue}}{{#unless @last}},{{/unless}} {{defaultPropertyDescription}}
             {{/each}}
         }
     }

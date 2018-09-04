@@ -1398,7 +1398,7 @@ export const deleteUserURL = function(parameters = {}) {
 /**
  * Binds all methods of a class instance to itself.
  */
-export const autobind = function(instance) {
+export const autoBind = function(instance) {
   for (let obj = instance; obj; obj = Object.getPrototypeOf(obj)) {
     // We're the end of the inheritance chain if we've reached 'Object'.
     if (obj.constructor.name === 'Object') {
@@ -1420,7 +1420,7 @@ export const autobind = function(instance) {
           value: instance[name].bind(instance),
           enumerable: false,
           configurable: true,
-          writable: true,
+          writable: true
         });
       }
     }
@@ -1430,20 +1430,40 @@ export const autobind = function(instance) {
  * Base class for all things common between Model and Collection.
  */
 export class Base {
-  constructor(options) {
-    autobind(this);
+  constructor(data, options) {
+    autoBind(this)
     // Define an automatic unique ID. This is primarily to distinguish
     // between multiple instances of the same name and data.
     Object.defineProperty(this, '_uid', {
-      value: _.uniqueId(),
+      value: 'idx_' + (new Date()).getTime(),
       enumerable: false,
       configurable: false,
-      writable: false,
+      writable: false
     });
+    this.setData(Object.assign(this.defaults(), data)); // Model attributes
     this._listeners = {}; // Event listeners
-    this._options = {}; // Internal option store
+    this._options = this.defaultOptions(); // Internal option store
+    this._busy = false
+    this._changed = false
+    this._request = null
     this.setOptions(options);
     this.boot();
+  }
+  /**
+   * If model process some network requests
+   *
+   * @return {boolean}
+   */
+  get busy() {
+    return this._busy
+  }
+  /**
+   * If model has changes but yet saved to server
+   *
+   * @return {boolean}
+   */
+  get changed() {
+    return this._changed
   }
   /**
    * @returns {string} The class name of this instance.
@@ -1452,20 +1472,43 @@ export class Base {
     return (Object.getPrototypeOf(this)).constructor.name;
   }
   /**
+   * Abort network request
+   */
+  abort() {
+    this._busy = false
+    this._request.reject()
+  }
+  /**
    * Called after construction, this hook allows you to add some extra setup
    * logic without having to override the constructor.
    */
-  boot() {
+  boot() {}
+  /**
+   * Property refs definitions
+   * @return {object}
+   */
+  refs() {
+    return {}
   }
   /**
-   * Returns a route configuration in the form {key: name}, where key may be
-   * 'save', 'fetch', 'delete' or any other custom key, and the name is what
-   * will be passed to the route resolver to generate the URL. See @getURL
-   *
-   * @returns {Object}
+   * Property paths
+   * @return
    */
-  routes() {
-    return {};
+  types() {
+    return {}
+  }
+  /**
+   * Return true if idKey set in property and attributes contains
+   * such key and value
+   * @return {boolean}
+   * @default false
+   */
+  get isNew() {
+    let idKey = this.getOption('idKey')
+    if (idKey === undefined) {
+      return true
+    }
+    return !this._attributes[idKey]
   }
   /**
    * Returns the default context for all events emitted by this instance.
@@ -1481,7 +1524,7 @@ export class Base {
    * @returns {string} Default string representation.
    */
   toString() {
-    return `<${this.$class} #${this._uid}>`;
+    return `<${this.$class} #${this._uid}>`
   }
   /**
    * @returns {Object} An empty representation of this model.
@@ -1489,7 +1532,18 @@ export class Base {
    *                   value in order to be reactive in Vue.
    */
   defaults() {
-    return {};
+    return {}
+  }
+  /**
+   * Default model configuration
+   */
+  defaultOptions() {
+    return {
+      shouldPatch: false,
+      fetchParsePath: 'data',
+      saveParsePath: 'data',
+      createParsePath: 'data'
+    }
   }
   /**
    * Emits an event by name to all registered listeners on that event.
@@ -1507,7 +1561,9 @@ export class Base {
       context = Object.assign({}, context, this.getDefaultEventContext());
       // Run through each listener. If any of them return false, stop the
       // iteration and mark that the event wasn't handled by all listeners.
-      //listeners.forEach ((listener) => listener (context))
+      listeners.forEach(function(listener) {
+        listener(context)
+      })
     }
   }
   /**
@@ -1527,50 +1583,21 @@ export class Base {
     }
   }
   /**
-   * @returns {Object} Parameters to use for replacement in route patterns.
-   */
-  getRouteParameters() {
-    return {}
-  }
-  /**
-   * @returns {RegExp|string} Pattern to match and group route parameters.
-   */
-  getRouteParameterPattern() {
-    return this.getOption('routeParameterPattern');
-  }
-  /**
-   * @returns {RegExp} The default route parameter pattern.
-   */
-  getDefaultRouteParameterPattern() {
-    return /\{([^}]+)\}/;
-  }
-  /**
-   * @returns {Object} This class' default options.
-   */
-  getDefaultOptions() {
-    return {
-      // Default HTTP methods for requests.
-      methods: this.getDefaultMethods(),
-      // Default route parameter interpolation pattern.
-      routeParameterPattern: this.getDefaultRouteParameterPattern(),
-      // The HTTP status code to use for indicating a validation error.
-      validationErrorStatus: 422
-    }
-  }
-  /**
    * @param {Array|string} path     Option path resolved by `_.get`
    * @param {*}            fallback Fallback value if the option is not set.
    *
    * @returns {*} The value of the given option path.
    */
   getOption(path, fallback = null) {
-    return _.get(this._options, path, fallback);
+    return this._options[path] || fallback;
   }
   /**
    * @returns {Object} This instance's default options.
    */
   options() {
-    return {}
+    return {
+      idKey: 'id'
+    }
   }
   /**
    * Sets an option.
@@ -1579,7 +1606,8 @@ export class Base {
    * @param {*}      value
    */
   setOption(path, value) {
-    _.set(this._options, path, value);
+    this._options[path] = value
+    return this
   }
   /**
    * Sets all given options. Successive values for the same option won't be
@@ -1587,236 +1615,18 @@ export class Base {
    *
    * @param {...Object} options One or more objects of options.
    */
-  setOptions() {}
+  setOptions(options) {
+    Object.assign(this._options, options)
+    return this
+  }
   /**
    * Returns all the options that are currently set on this instance.
    *
    * @return {Object}
    */
   getOptions() {
-    return _.defaultTo(this._options, {});
+    return this._options || {}
   }
-  /**
-   * Returns a function that translates a route key and parameters to a URL.
-   *
-   * @returns {Function} Will be passed `route` and `parameters`
-   */
-  getRouteResolver() {
-    return this.getDefaultRouteResolver();
-  }
-  /**
-   * @returns {Object} An object consisting of all route string replacements.
-   */
-  getRouteReplacements(route, parameters = {}) {
-    const replace = {};
-    let pattern = this.getRouteParameterPattern();
-    pattern = new RegExp(pattern instanceof RegExp ? pattern.source : pattern, 'g');
-    for (let parameter;
-      (parameter = pattern.exec(route)) !== null;) {
-      replace[parameter[0]] = parameters[parameter[1]];
-    }
-    return replace;
-  }
-  /**
-   * Returns the default URL provider, which assumes that route keys are URL's,
-   * and parameter replacement syntax is in the form "{param}".
-   *
-   * @returns {Function}
-   */
-  getDefaultRouteResolver() {
-    //return (route, parameters = {}) => {
-    //  let replacements = this.getRouteReplacements(route, parameters);
-    // Replace all route parameters with their replacement values.
-    //  return _.reduce (replacements, (result, value, parameter) => {
-    //    return _.replace (result, parameter, value);
-    //  },route);
-    // }
-  }
-  /**
-   * @returns {Object} The data to send to the server when saving this model.
-   */
-  getDeleteBody() {
-    return {};
-  }
-  /**
-   * @returns {Object} Query parameters that will be appended to the `fetch` URL.
-   */
-  getFetchQuery() {
-    return {};
-  }
-  /**
-   * @returns {Object} Query parameters that will be appended to the `save` URL.
-   */
-  getSaveQuery() {
-    return {};
-  }
-  /**
-   * @returns {Object} Query parameters that will be appended to the `delete` URL.
-   */
-  getDeleteQuery() {
-    return {};
-  }
-  /**
-   * @returns {string} The key to use when generating the `fetch` URL.
-   */
-  getFetchRoute() {
-    return this.getRoute('fetch');
-  }
-  /**
-   * @returns {string} The key to use when generating the `save` URL.
-   */
-  getSaveRoute() {
-    return this.getRoute('save');
-  }
-  /**
-   * @returns {string} The key to use when generating the `delete` URL.
-   */
-  getDeleteRoute() {
-    return this.getRoute('delete');
-  }
-  /**
-   * @returns {Object} Headers to use when making a save request.
-   */
-  getSaveHeaders() {
-    return {};
-  }
-  /**
-   * @returns {Object} Headers to use when making any request.
-   */
-  getDefaultHeaders() {
-    return {};
-  }
-  /**
-   * @returns {Object} Headers to use when making a fetch request.
-   */
-  getFetchHeaders() {
-    return {};
-  }
-  /**
-   * @returns {Object} Headers to use when making a delete request.
-   */
-  getDeleteHeaders() {
-    return {};
-  }
-  /**
-   * @returns {Object} Default HTTP methods.
-   */
-  getDefaultMethods() {
-    return {
-      fetch: 'GET',
-      save: 'POST',
-      update: 'POST',
-      create: 'POST',
-      patch: 'PATCH',
-      delete: 'DELETE',
-    }
-  }
-  /**
-   * @returns {string} HTTP method to use when making a save request.
-   */
-  getSaveMethod() {
-    return this.getOption('methods.save');
-  }
-  /**
-   * @returns {string} HTTP method to use when making a fetch request.
-   */
-  getFetchMethod() {
-    return this.getOption('methods.fetch');
-  }
-  /**
-   * @returns {string} HTTP method to use when updating a resource.
-   */
-  getUpdateMethod() {
-    return this.getOption('methods.update');
-  }
-  /**
-   * @returns {string} HTTP method to use when patching a resource.
-   */
-  getPatchMethod() {
-    return this.getOption('methods.patch');
-  }
-  /**
-   * @returns {string} HTTP method to use when creating a resource.
-   */
-  getCreateMethod() {
-    return this.getOption('methods.create');
-  }
-  /**
-   * @returns {string} HTTP method to use when deleting a resource.
-   */
-  getDeleteMethod() {
-    return this.getOption('methods.delete');
-  }
-  /**
-   * @returns {number} The HTTP status code that indicates a validation error.
-   */
-  getValidationErrorStatus() {
-    return _.defaultTo(this.getOption('validationErrorStatus'), 422);
-  }
-  /**
-   * @returns {boolean} `true` if the response indicates a validation error.
-   */
-  isBackendValidationError(error) {
-    // The error must have a response for it to be a validation error.
-    if (!_.invoke(error, 'getResponse', false)) {
-      return false;
-    }
-    let status = error.getResponse().getStatus();
-    let invalid = this.getValidationErrorStatus();
-    return status == invalid;
-  }
-  /**
-   * @return {string|undefined} Route value by key.
-   */
-  getRoute(key, fallback) {
-    let route = _.get(this.routes(), key, _.get(this.routes(), fallback));
-    if (!route) {
-      throw new Error(`Invalid or missing route`);
-    }
-    return route;
-  }
-  /**
-   * @returns {string} The full URL to use when making a fetch request.
-   */
-  getFetchURL() {
-    return this.getURL(this.getFetchRoute(), this.getRouteParameters());
-  }
-  /**
-   * @returns {string} The full URL to use when making a save request.
-   */
-  getSaveURL() {
-    return this.getURL(this.getSaveRoute(), this.getRouteParameters());
-  }
-  /**
-   * @returns {string} The full URL to use when making a delete request.
-   */
-  getDeleteURL() {
-    return this.getURL(this.getDeleteRoute(), this.getRouteParameters());
-  }
-  /**
-   * @param {string} route      The route key to use to generate the URL.
-   * @param {Object} parameters Route parameters.
-   *
-   * @returns {string} A URL that was generated using the given route key.
-   */
-  getURL(route, parameters = {}) {
-    return this.getRouteResolver()(route, parameters);
-  }
-  /**
-   * @returns {Request} A new `Request` using the given configuration.
-   */
-  getRequest(config) {
-    return new Request(config);
-  }
-  /**
-   * This is the central component for all HTTP requests and handling.
-   *
-   * @param  {Object}     config      Request configuration
-   * @param  {function}   onRequest   Called before the request is made.
-   * @param  {function}   onSuccess   Called when the request was successful.
-   * @param  {function}   onFailure   Called when the request failed.
-   */
-  request(config, onRequest, onSuccess, onFailure) {}
   /**
    * Fetches data from the database/API.
    *
@@ -1825,66 +1635,101 @@ export class Base {
    * @param {options.headers}     Query headers
    * @returns {Promise}
    */
-  fetch(options = {}) {
-    let config = () => _.defaults(options, {
-      url: this.getFetchURL(),
-      method: this.getFetchMethod(),
-      params: this.getFetchQuery(),
-      headers: this.getFetchHeaders(),
-    });
-    return this.request(
-      config,
-      this.onFetch,
-      this.onFetchSuccess,
-      this.onFetchFailure
-    );
+  fetch(options) {
+    let method = this.getOption('fetch', options['method'] || false)
+    if (method === false) {
+      return Promise.reject('No method specified for fetch method')
+    }
+    if (typeof method === 'function') {
+      return method().then(this.parse)
+    }
+  }
+  /**
+   * Set wall attributes
+   *
+   * @param data {object}
+   */
+  setData(data) {
+    let _this = this
+    Object.keys(data).forEach(function(key) {
+      _this.setProperty(key, data[key])
+    })
+  }
+  /**
+   * Change model property
+   *
+   * @param key
+   * @param value
+   */
+  setProperty(key, value) {
+    let refs = this.refs()
+    let types = this.types()
+    if (refs[key] && types[key] === 'array' && Array.isArray(value)) {
+      value.forEach(function(item) {
+        if (item instanceof refs[key]) {
+          this._attributes.push(item)
+        } else {
+          this._attributes.push(new refs[key](item))
+        }
+      })
+    } else if (refs[key] && types[key] === 'ref') {
+      this._attributes[key] = new refs[key](value)
+    } else {
+      this._attributes[key] = value
+    }
+  }
+  /**
+   * Parse response from web server
+   *
+   * @param response
+   * @param method {string}
+   */
+  parse(response, method) {
+    let path = this.getOption(method + 'ParsePath', 'data')
+    let data = response[path]
+    let _this = this
+    Object.keys(this._attributes).forEach(function(key) {
+      if (data[key] === undefined) return
+      _this.setProperty(key, data[key])
+    })
   }
   /**
    * Persists data to the database/API.
    * @returns {Promise}
    */
-  save() {
-    let config = () => ({
-      url: this.getSaveURL(),
-      method: this.getSaveMethod(),
-      data: this.getSaveData(),
-      params: this.getSaveQuery(),
-      headers: this.getSaveHeaders(),
-    });
-    return this.request(
-      config,
-      this.onSave,
-      this.onSaveSuccess,
-      this.onSaveFailure
-    );
-  }
+  save() {}
   /**
    * Removes model or collection data from the database/API.
    * @returns {Promise}
    */
-  delete() {
-    let config = () => ({
-      url: this.getDeleteURL(),
-      method: this.getDeleteMethod(),
-      data: this.getDeleteBody(),
-      params: this.getDeleteQuery(),
-      headers: this.getDeleteHeaders(),
-    });
-    return this.request(
-      config,
-      this.onDelete,
-      this.onDeleteSuccess,
-      this.onDeleteFailure
-    );
-  }
+  delete() {}
 }
 /**
  * Model for definition #definitions/Order
  * Type: Object
  */
 export class Order extends Base {
+  refs() {
+    return {}
+  }
+  types() {
+    return {
+      id: "integer",
+      petId: "integer",
+      quantity: "integer",
+      shipDate: "string",
+      status: "string",
+      complete: "boolean"
+    }
+  }
   defaults() {
     return {
+      id: null,
+      petId: null,
+      quantity: null,
+      shipDate: "",
+      status: "placed", // Order Status , Possible options: [placed, approved, delivered]
+      complete: false
     }
   }
 }
@@ -1893,8 +1738,31 @@ export class Order extends Base {
  * Type: Object
  */
 export class User extends Base {
+  refs() {
+    return {}
+  }
+  types() {
+    return {
+      id: "integer",
+      username: "string",
+      firstName: "string",
+      lastName: "string",
+      email: "string",
+      password: "string",
+      phone: "string",
+      userStatus: "integer"
+    }
+  }
   defaults() {
     return {
+      id: null,
+      username: "",
+      firstName: "",
+      lastName: "",
+      email: "",
+      password: "",
+      phone: "",
+      userStatus: null // User Status 
     }
   }
 }
@@ -1903,8 +1771,19 @@ export class User extends Base {
  * Type: Object
  */
 export class Category extends Base {
+  refs() {
+    return {}
+  }
+  types() {
+    return {
+      id: "integer",
+      name: "string"
+    }
+  }
   defaults() {
     return {
+      id: null,
+      name: ""
     }
   }
 }
@@ -1913,8 +1792,19 @@ export class Category extends Base {
  * Type: Object
  */
 export class Tag extends Base {
+  refs() {
+    return {}
+  }
+  types() {
+    return {
+      id: "integer",
+      name: "string"
+    }
+  }
   defaults() {
     return {
+      id: null,
+      name: ""
     }
   }
 }
@@ -1923,8 +1813,30 @@ export class Tag extends Base {
  * Type: Object
  */
 export class Pet extends Base {
+  refs() {
+    return {
+      category: Category,
+      tags: Tag,
+    }
+  }
+  types() {
+    return {
+      id: "integer",
+      category: "ref",
+      name: "string",
+      photoUrls: "array",
+      tags: "array",
+      status: "string"
+    }
+  }
   defaults() {
     return {
+      id: null,
+      category: null,
+      name: "",
+      photoUrls: [],
+      tags: [],
+      status: "available" // pet status in the store , Possible options: [available, pending, sold]
     }
   }
 }
@@ -1933,8 +1845,21 @@ export class Pet extends Base {
  * Type: Object
  */
 export class ApiResponse extends Base {
+  refs() {
+    return {}
+  }
+  types() {
+    return {
+      code: "integer",
+      type: "string",
+      message: "string"
+    }
+  }
   defaults() {
     return {
+      code: null,
+      type: "",
+      message: ""
     }
   }
 }
