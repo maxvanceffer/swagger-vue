@@ -1427,6 +1427,16 @@ export const autoBind = function(instance) {
   }
 }
 /**
+ * Reserved keywords that can't be used for attribute or option names.
+ */
+const RESERVED = [
+  '_attributes',
+  '_listeners',
+  '_uid',
+  'attributes',
+  'busy'
+];
+/**
  * Base class for all things common between Model and Collection.
  */
 export class Base {
@@ -1440,13 +1450,14 @@ export class Base {
       configurable: false,
       writable: false
     });
-    this.setData(Object.assign(this.defaults(), data)); // Model attributes
     this._listeners = {}; // Event listeners
+    this._attributes = {}
     this._options = this.defaultOptions(); // Internal option store
-    this._busy = false
-    this._changed = false
-    this._request = null
     this.setOptions(options);
+    this.setData(Object.assign(this.defaults(), data)); // Model attributes
+    this._busy = false;
+    this._changed = false;
+    this._request = null;
     this.boot();
   }
   /**
@@ -1519,6 +1530,38 @@ export class Base {
     return {
       target: this
     }
+  }
+  has(name) {
+    return (Object.keys(this._attributes).indexOf(name) !== -1)
+  }
+  /**
+   * Similar to `saved`, returns an attribute's value or a fallback value
+   * if this model doesn't have the attribute.
+   *
+   * @param {string} attribute
+   * @param {*}      fallback
+   *
+   * @returns {*} The value of the attribute or `fallback` if not found.
+   */
+  get(attribute, fallback) {
+    return this._attributes[attribute] || fallback;
+  }
+  /**
+   * Registers an attribute on this model so that it can be accessed directly
+   * on the model, passing through `get` and `set`.
+   */
+  registerAttribute(attribute) {
+    // Protect against unwillingly using an attribute name that already
+    // exists as an internal property or method name.
+    if (RESERVED.indexOf(attribute) !== -1) {
+      throw new Error(`Can't use reserved attribute name '${attribute}'`);
+    }
+    // Create dynamic accessors and mutations so that we can update the
+    // model directly while also keeping the model attributes in sync.
+    Object.defineProperty(this, attribute, {
+      get: () => this.get(attribute),
+      set: (value) => this.setProperty(attribute, value)
+    })
   }
   /**
    * @returns {string} Default string representation.
@@ -1658,24 +1701,41 @@ export class Base {
   /**
    * Change model property
    *
-   * @param key
+   * @param attribute
    * @param value
    */
-  setProperty(key, value) {
+  setProperty(attribute, value) {
     let refs = this.refs()
     let types = this.types()
-    if (refs[key] && types[key] === 'array' && Array.isArray(value)) {
+    let defaults = this.defaults()
+    let defined = this.has(attribute)
+    if (defined === false && Object.keys(defaults).indexOf(attribute) !== -1) {
+      this.registerAttribute(attribute)
+    }
+    let previous = this.get(attribute, undefined)
+    let changed = false
+    if (refs[attribute] && types[attribute] === 'array' && Array.isArray(value)) {
+      changed = true
       value.forEach(function(item) {
-        if (item instanceof refs[key]) {
+        if (item instanceof refs[attribute]) {
           this._attributes.push(item)
         } else {
-          this._attributes.push(new refs[key](item))
+          this._attributes.push(new refs[attribute](item))
         }
       })
-    } else if (refs[key] && types[key] === 'ref') {
-      this._attributes[key] = new refs[key](value)
+    } else if (refs[attribute] && types[attribute] === 'ref') {
+      changed = true
+      this._attributes[attribute] = new refs[attribute](value)
     } else {
-      this._attributes[key] = value
+      changed = true
+      this._attributes[attribute] = value
+    }
+    if (defined && changed) {
+      this.emit('change', {
+        attribute,
+        previous,
+        value
+      });
     }
   }
   /**
