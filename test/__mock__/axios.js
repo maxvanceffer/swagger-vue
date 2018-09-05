@@ -5,7 +5,6 @@ import find_by_status from './responses/findPetsByStatus'
 
 module.exports = {
   get: jest.fn ((url) => {
-    console.log ('Url requested', url)
     if (url === findPetsByStatus_RAW_URL ()) {
       return Promise.resolve ({
         data: find_by_status
