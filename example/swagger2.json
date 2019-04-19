@@ -829,6 +829,13 @@
             "description": "The name that needs to be deleted",
             "required": true,
             "type": "string"
+          },
+          {
+            "name": "petType",
+            "in": "header",
+            "description": "The name that needs to be deleted",
+            "required": true,
+            "type": "string"
           }
         ],
         "responses": {

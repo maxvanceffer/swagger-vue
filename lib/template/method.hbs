@@ -35,6 +35,17 @@ export const {{&methodName}} = function(parameters = {}) {
         }
     {{/isBodyParameter}}
 
+    {{#isHeaderParameter}}
+        if (config.headers === undefined) {
+          config.headers = {}
+        }
+        if(parameters['{{&camelCaseName}}'] !== undefined) {
+            config.headers['{{&name}}'] = parameters['{{&camelCaseName}}']
+        } {{#if default}} else if (parameters['{{&camelCaseName}}'] === undefined) {
+            config.headers['{{&name}}'] = {{{rawParam default}}}
+        } {{/if}}
+    {{/isHeaderParameter}}
+
     {{#isFormParameter}}
         if(parameters['{{&camelCaseName}}'] !== undefined) {
             form['{{&name}}'] = parameters['{{&camelCaseName}}']
