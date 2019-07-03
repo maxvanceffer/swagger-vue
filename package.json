@@ -7,7 +7,9 @@
     "gen:api": "node example/create_api/index.js",
     "gen:yaml": "node example/create_yaml/index.js",
     "gen:md": "node example/create_md/index.js",
-    "gen:test": "node example/create_api/index.js"
+    "gen:test": "node example/create_api/index.js",
+    "snyk-protect": "snyk protect",
+    "prepublish": "npm run snyk-protect"
   },
   "repository": {
     "type": "git",
@@ -30,12 +32,14 @@
     "js-beautify": "^1.6.12",
     "lodash": "^4.17.4",
     "optimist": "^0.6.1",
-    "semver": "^5.5.0"
+    "semver": "^5.5.0",
+    "snyk": "^1.189.0"
   },
   "devDependencies": {
     "eslint": "^3.18.0",
     "eslint-config-standard": "^7.1.0",
     "eslint-plugin-promise": "^3.5.0",
     "eslint-plugin-standard": "^2.1.1"
-  }
+  },
+  "snyk": true
 }
